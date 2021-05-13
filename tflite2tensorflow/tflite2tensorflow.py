@@ -4263,14 +4263,19 @@ def main():
         output_node_names_non_suffix = []
         print(f'{Color.REVERCE}TensorFlow/Keras model building process starts{Color.RESET}', '=' * 38)
         TFLite_Detection_PostProcess_flg = False
-        TFLite_Detection_PostProcess_flg = make_graph(
-            ops,
-            op_types,
-            interpreter,
-            replace_swish_and_hardswish,
-            replace_prelu_and_minmax,
-            optimizing_for_edgetpu_flg,
-            optimizing_for_openvino_and_myriad)
+
+        # Another hack to pass the graph along...
+        import tensorflow.compat.v1 as tf
+        graph = tf.Graph()
+        with graph.as_default():
+          TFLite_Detection_PostProcess_flg = make_graph(
+              ops,
+              op_types,
+              interpreter,
+              replace_swish_and_hardswish,
+              replace_prelu_and_minmax,
+              optimizing_for_edgetpu_flg,
+              optimizing_for_openvino_and_myriad)
         print('outputs:')
         if not TFLite_Detection_PostProcess_flg:
             for output in output_details:
@@ -4289,13 +4294,25 @@ def main():
             ]
         print(f'{Color.GREEN}TensorFlow/Keras model building process complete!{Color.RESET}')
 
+
+        # Ugly hack because of wrong tensor name
+        # output_details shows the name without the _ and extra number
+        op_names = [op.name for op in graph.get_operations()]
+        for i,name in enumerate(output_node_names):
+          for op_name in op_names:
+            name_0 = name.split(':')[0]
+            if name_0 in op_name:
+              if len(name_0.split('_'))==(len(op_name.split('_'))-1):
+                output_node_names[i] = op_name+"".join([':']+name.split(':')[1:])
+
+
         # saved_model / .pb output
         import tensorflow.compat.v1 as tf
         try:
             print(f'{Color.REVERCE}saved_model / .pb output started{Color.RESET}', '=' * 52)
             config = tf.ConfigProto()
             config.gpu_options.allow_growth = True
-            graph = tf.get_default_graph()
+            #graph = tf.get_default_graph()
             with tf.Session(config=config, graph=graph) as sess:
                 sess.run(tf.global_variables_initializer())
                 if not TFLite_Detection_PostProcess_flg:
@@ -4303,7 +4320,7 @@ def main():
                         sess=sess,
                         input_graph_def=graph.as_graph_def(),
                         output_node_names=[re.sub(':0*', '', name) for name in output_node_names])
-
+                    print("ok")
                     tf.saved_model.simple_save(
                         sess,
                         model_output_path,
